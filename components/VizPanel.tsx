@@ -27,21 +27,25 @@ export default function VizPanel({ owner, name, features }: VizPanelProps) {
   const [selectedField, setSelectedField] = useState<string>('frame_index');
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
+      setError(null);
       try {
-        // Usar la API oficial de Hugging Face datasets-server
         const response = await fetch(
-          `https://datasets-server.huggingface.co/rows?dataset=lerobot%2F${name}&config=default&split=train&offset=0&length=100`
+          `https://datasets-server.huggingface.co/rows?dataset=${encodeURIComponent(owner + '/' + name)}&config=default&split=train&offset=0&length=100`
         );
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         const result = await response.json();
-        // Los datos están en result.rows[].row
         const rows = result.rows ? result.rows.map((r: any) => r.row) : [];
         setData(rows);
-      } catch (error) {
-        console.error('Error fetching visualization data:', error);
+      } catch (error: any) {
+        setError(error.message || 'Error desconocido');
+        setData([]);
       } finally {
         setLoading(false);
       }
@@ -85,8 +89,12 @@ export default function VizPanel({ owner, name, features }: VizPanelProps) {
           ))}
         </div>
       </div>
-      {loading ? (
+      {error ? (
+        <div className="text-center py-8 text-red-500">Error: {error}</div>
+      ) : loading ? (
         <div className="text-center py-8">Cargando datos...</div>
+      ) : getHistogramData(selectedField).length === 0 ? (
+        <div className="text-center py-8 text-gray-500">No hay datos para graficar</div>
       ) : (
         <div className="h-[400px]">
           <ResponsiveContainer width="100%" height="100%">

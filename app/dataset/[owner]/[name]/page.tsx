@@ -65,6 +65,7 @@ export default function DatasetDetailPage() {
         owner={dataset.author}
       />
       {/* Aquí puedes agregar más detalles básicos si lo deseas */}
+      <VizPanel owner={dataset.id.split('/')[0]} name={dataset.id.split('/')[1]} features={{}} />
       {/* El resto de la lógica para features, tabla, etc. puede ir aquí si se desea */}
     </main>
   );
