@@ -15,94 +15,89 @@ interface VizPanelProps {
   features: Record<string, any>;
 }
 
+const MAIN_FIELDS = [
+  'timestamp',
+  'frame_index',
+  'episode_index',
+  'index',
+  'task_index',
+];
+
 export default function VizPanel({ owner, name, features }: VizPanelProps) {
-  const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
+  const [selectedField, setSelectedField] = useState<string>('frame_index');
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const handleColumnSelect = (column: string) => {
-    setSelectedColumns((prev) =>
-      prev.includes(column)
-        ? prev.filter((c) => c !== column)
-        : [...prev, column]
-    );
-  };
-
   useEffect(() => {
     const fetchData = async () => {
-      if (selectedColumns.length === 0) return;
-
       setLoading(true);
       try {
+        // Usar la API oficial de Hugging Face datasets-server
         const response = await fetch(
-          `https://huggingface.co/api/datasets/${owner}/${name}/data?split=train&limit=100`
+          `https://datasets-server.huggingface.co/rows?dataset=lerobot%2F${name}&config=default&split=train&offset=0&length=100`
         );
         const result = await response.json();
-        setData(result);
+        // Los datos están en result.rows[].row
+        const rows = result.rows ? result.rows.map((r: any) => r.row) : [];
+        setData(rows);
       } catch (error) {
         console.error('Error fetching visualization data:', error);
       } finally {
         setLoading(false);
       }
     };
-
     fetchData();
-  }, [owner, name, selectedColumns]);
+  }, [owner, name]);
 
-  const getColumnType = (column: string) => {
-    const feature = features[column];
-    if (!feature) return 'unknown';
-    return feature.dtype || typeof feature;
-  };
+  // Generar histograma para el campo seleccionado
+  function getHistogramData(field: string) {
+    if (!data.length) return [];
+    const counts: Record<string, number> = {};
+    data.forEach((row) => {
+      const value = row[field];
+      if (typeof value === 'number' || typeof value === 'string') {
+        counts[value] = (counts[value] || 0) + 1;
+      }
+    });
+    return Object.entries(counts).map(([key, value]) => ({ value: key, count: value }));
+  }
 
   return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <h2 className="text-xl font-semibold mb-4">Visualización</h2>
-      
+    <div className="bg-white dark:bg-gray-900 rounded-lg shadow p-6">
+      <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Visualización</h2>
       <div className="mb-6">
-        <h3 className="text-sm font-medium text-gray-700 mb-2">
-          Seleccionar columnas para visualizar:
+        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Selecciona un campo para ver su histograma:
         </h3>
         <div className="flex flex-wrap gap-2">
-          {Object.keys(features).map((column) => (
+          {MAIN_FIELDS.map((field) => (
             <button
-              key={column}
-              onClick={() => handleColumnSelect(column)}
-              className={`px-3 py-1 rounded-full text-sm ${
-                selectedColumns.includes(column)
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              key={field}
+              onClick={() => setSelectedField(field)}
+              className={`px-3 py-1 rounded-full text-sm border transition-colors ${
+                selectedField === field
+                  ? 'bg-blue-500 text-white border-blue-500'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700'
               }`}
             >
-              {column}
+              {field}
             </button>
           ))}
         </div>
       </div>
-
       {loading ? (
         <div className="text-center py-8">Cargando datos...</div>
-      ) : selectedColumns.length > 0 ? (
+      ) : (
         <div className="h-[400px]">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data}>
+            <BarChart data={getHistogramData(selectedField)}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey={selectedColumns[0]} />
-              <YAxis />
+              <XAxis dataKey="value" />
+              <YAxis allowDecimals={false} />
               <Tooltip />
-              {selectedColumns.slice(1).map((column) => (
-                <Bar
-                  key={column}
-                  dataKey={column}
-                  fill={`#${Math.floor(Math.random() * 16777215).toString(16)}`}
-                />
-              ))}
+              <Bar dataKey="count" fill="#3b82f6" />
             </BarChart>
           </ResponsiveContainer>
-        </div>
-      ) : (
-        <div className="text-center py-8 text-gray-500">
-          Selecciona columnas para visualizar
         </div>
       )}
     </div>
