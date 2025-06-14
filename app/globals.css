@@ -8,6 +8,16 @@
 }
 
 body {
+  @apply transition-colors duration-300;
   color: rgb(var(--foreground-rgb));
   background: rgb(var(--background-rgb));
+}
+
+html {
+  background: rgb(var(--background-rgb));
+}
+
+.dark {
+  --foreground-rgb: 245, 245, 245;
+  --background-rgb: 24, 26, 27;
 } 

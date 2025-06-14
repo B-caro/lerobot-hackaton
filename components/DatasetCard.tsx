@@ -18,12 +18,12 @@ export default function DatasetCard({ dataset }: DatasetCardProps) {
 
   return (
     <Link href={`/dataset/lerobot/${name}`}>
-      <div className="border border-gray-200 rounded-lg p-6 hover:shadow-lg transition-shadow">
-        <h2 className="text-xl font-semibold mb-2">{displayName}</h2>
-        <p className="text-gray-600 text-sm mb-4">
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl p-6 hover:shadow-xl transition-shadow shadow-md flex flex-col h-full">
+        <h2 className="text-xl font-semibold mb-2 truncate" title={displayName}>{displayName}</h2>
+        <p className="text-gray-600 dark:text-gray-300 text-sm mb-4 truncate">
           Última actualización: {new Date(dataset.lastModified).toLocaleDateString()}
         </p>
-        <div className="flex items-center gap-4 text-sm text-gray-500">
+        <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400 mt-auto">
           <span className="flex items-center gap-1">
             <span role="img" aria-label="likes">⭐</span>
             {dataset.likes}
