@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import DatasetHeader from '@/components/DatasetHeader';
 import SchemaInspector from '@/components/SchemaInspector';
 import TablePreview from '@/components/TablePreview';
@@ -20,8 +20,10 @@ interface DatasetDetail {
 
 export default function DatasetDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const [dataset, setDataset] = useState<DatasetDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [meta, setMeta] = useState<any>(null);
 
   useEffect(() => {
     const fetchDatasetDetail = async () => {
@@ -40,6 +42,12 @@ export default function DatasetDetailPage() {
           tags: data.tags,
           author: data.author,
         });
+        // Fetch meta/info.json para mostrar metadatos
+        const metaRes = await fetch(`https://huggingface.co/datasets/lerobot/${params.name}/resolve/main/meta/info.json`);
+        if (metaRes.ok) {
+          const metaJson = await metaRes.json();
+          setMeta(metaJson);
+        }
       } catch (error) {
         console.error('Error fetching dataset details:', error);
       } finally {
@@ -59,10 +67,17 @@ export default function DatasetDetailPage() {
 
   return (
     <main className="container mx-auto px-4 py-8">
+      <button
+        onClick={() => router.back()}
+        className="mb-6 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2"
+      >
+        <span aria-hidden="true">←</span> Regresar
+      </button>
       <DatasetHeader
         name={dataset.name}
         description={dataset.description}
         owner={dataset.author}
+        meta={meta}
       />
       {/* Aquí puedes agregar más detalles básicos si lo deseas */}
       <VizPanel owner={dataset.id.split('/')[0]} name={dataset.id.split('/')[1]} features={{}} />

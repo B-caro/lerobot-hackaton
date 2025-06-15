@@ -23,11 +23,67 @@ const MAIN_FIELDS = [
   'task_index',
 ];
 
+// --- NUEVO: función para agrupar en buckets ---
+function bucketize(lengths: number[], bucketSize: number) {
+  if (!lengths.length) return [];
+  const min = Math.min(...lengths);
+  const max = Math.max(...lengths);
+  const buckets: { intervalo: string; cantidad: number }[] = [];
+  for (let start = Math.floor(min / bucketSize) * bucketSize; start <= max; start += bucketSize) {
+    const end = start + bucketSize - 1;
+    const count = lengths.filter((l) => l >= start && l <= end).length;
+    buckets.push({ intervalo: `${start}-${end}`, cantidad: count });
+  }
+  return buckets.filter((b) => b.cantidad > 0);
+}
+
+// --- NUEVO: función para agrupar en buckets de tipo float (para next_reward, magnitud) ---
+function bucketizeFloat(values: number[], binSize: number) {
+  if (!values.length) return [];
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const buckets: { intervalo: string; cantidad: number }[] = [];
+  for (let start = Math.floor(min / binSize) * binSize; start <= max; start += binSize) {
+    const end = start + binSize;
+    const count = values.filter((v) => v >= start && v < end).length;
+    buckets.push({ intervalo: `${start.toFixed(2)}–${end.toFixed(2)}`, cantidad: count });
+  }
+  return buckets.filter((b) => b.cantidad > 0);
+}
+
 export default function VizPanel({ owner, name, features }: VizPanelProps) {
   const [selectedField, setSelectedField] = useState<string>('frame_index');
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // --- NUEVO: estados para histograma de longitudes ---
+  const [lengths, setLengths] = useState<number[]>([]);
+  const [loadingLengths, setLoadingLengths] = useState(false);
+  const [errorLengths, setErrorLengths] = useState<string | null>(null);
+  const bucketSize = 10;
+
+  // --- NUEVO: Estado para versión y metadatos ---
+  const [codebaseVersion, setCodebaseVersion] = useState<string | null>(null);
+  const [metaError, setMetaError] = useState<string | null>(null);
+
+  // Detectar versión y metadatos
+  useEffect(() => {
+    const fetchMeta = async () => {
+      setMetaError(null);
+      setCodebaseVersion(null);
+      try {
+        const url = `https://huggingface.co/datasets/${owner}/${name}/resolve/main/meta/info.json`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('No se pudo descargar info.json');
+        const meta = await response.json();
+        setCodebaseVersion(meta.codebase_version || null);
+      } catch (e: any) {
+        setMetaError(e.message || 'Error al cargar metadatos');
+      }
+    };
+    fetchMeta();
+  }, [owner, name]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -53,6 +109,40 @@ export default function VizPanel({ owner, name, features }: VizPanelProps) {
     fetchData();
   }, [owner, name]);
 
+  // --- NUEVO: obtener y parsear episodes.jsonl ---
+  useEffect(() => {
+    const fetchLengths = async () => {
+      setLoadingLengths(true);
+      setErrorLengths(null);
+      setLengths([]);
+      try {
+        const url = `https://huggingface.co/datasets/${owner}/${name}/resolve/main/meta/episodes.jsonl`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('No se pudo descargar episodes.jsonl');
+        const text = await response.text();
+        const lines = text.split('\n').filter(Boolean);
+        const episodeLengths: number[] = [];
+        for (const line of lines) {
+          try {
+            const obj = JSON.parse(line);
+            if (typeof obj.length === 'number') {
+              episodeLengths.push(obj.length);
+            }
+          } catch (e) {
+            // línea corrupta, ignorar
+          }
+        }
+        if (!episodeLengths.length) throw new Error('No se encontraron longitudes de episodios');
+        setLengths(episodeLengths);
+      } catch (e: any) {
+        setErrorLengths(e.message || 'Error al cargar longitudes');
+      } finally {
+        setLoadingLengths(false);
+      }
+    };
+    fetchLengths();
+  }, [owner, name]);
+
   // Generar histograma para el campo seleccionado
   function getHistogramData(field: string) {
     if (!data.length) return [];
@@ -66,46 +156,334 @@ export default function VizPanel({ owner, name, features }: VizPanelProps) {
     return Object.entries(counts).map(([key, value]) => ({ value: key, count: value }));
   }
 
+  // --- NUEVO: datos de buckets para el histograma de longitudes ---
+  const bucketData = bucketize(lengths, bucketSize);
+
+  // --- NUEVO: Histograma de recompensas (next_reward) ---
+  const [rewards, setRewards] = useState<number[]>([]);
+  const [loadingRewards, setLoadingRewards] = useState(false);
+  const [errorRewards, setErrorRewards] = useState<string | null>(null);
+  const rewardBinSize = 0.1;
+
+  // --- MODIFICAR: Fetches condicionales según versión ---
+  // Para cada fetch, sólo intentar si la versión lo soporta
+  // v2.1: episodes.jsonl + episodes_stats.jsonl
+  // v2.0: episodes.jsonl + stats.json
+  // v3.0: Parquet (no soportado)
+
+  useEffect(() => {
+    if (!codebaseVersion) return;
+    if (codebaseVersion === 'v3.0') return;
+    const fetchRewards = async () => {
+      setLoadingRewards(true);
+      setErrorRewards(null);
+      setRewards([]);
+      try {
+        let url = '';
+        if (codebaseVersion === 'v2.1') {
+          url = `https://datasets-server.huggingface.co/rows?dataset=${encodeURIComponent(owner + '/' + name)}&config=default&split=train&offset=0&length=1000`;
+        } else if (codebaseVersion === 'v2.0') {
+          url = `https://huggingface.co/datasets/${owner}/${name}/resolve/main/meta/episodes.jsonl`;
+        }
+        if (!url) throw new Error('No hay fuente de recompensas para esta versión');
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('No se pudo descargar los datos de recompensas');
+        if (codebaseVersion === 'v2.1') {
+          const result = await response.json();
+          const rows = result.rows ? result.rows.map((r: any) => r.row) : [];
+          const rewardsArr: number[] = [];
+          for (const row of rows) {
+            if (typeof row.next_reward === 'number') {
+              rewardsArr.push(row.next_reward);
+            }
+          }
+          if (!rewardsArr.length) throw new Error('No se encontraron recompensas');
+          setRewards(rewardsArr);
+        } else if (codebaseVersion === 'v2.0') {
+          const text = await response.text();
+          const lines = text.split('\n').filter(Boolean);
+          const rewardsArr: number[] = [];
+          for (const line of lines) {
+            try {
+              const obj = JSON.parse(line);
+              if (typeof obj.next_reward === 'number') {
+                rewardsArr.push(obj.next_reward);
+              }
+            } catch (e) {}
+          }
+          if (!rewardsArr.length) throw new Error('No se encontraron recompensas');
+          setRewards(rewardsArr);
+        }
+      } catch (e: any) {
+        setErrorRewards(e.message || 'Error al cargar recompensas');
+      } finally {
+        setLoadingRewards(false);
+      }
+    };
+    fetchRewards();
+  }, [owner, name, codebaseVersion]);
+  const rewardBuckets = bucketizeFloat(rewards, rewardBinSize);
+
+  // --- NUEVO: Serie temporal de recompensa media por episodio ---
+  const [meanRewards, setMeanRewards] = useState<{ episode: number; meanReward: number }[]>([]);
+  const [loadingMeanRewards, setLoadingMeanRewards] = useState(false);
+  const [errorMeanRewards, setErrorMeanRewards] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!codebaseVersion) return;
+    if (codebaseVersion === 'v3.0') return;
+    const fetchMeanRewards = async () => {
+      setLoadingMeanRewards(true);
+      setErrorMeanRewards(null);
+      setMeanRewards([]);
+      try {
+        let url = '';
+        if (codebaseVersion === 'v2.1') {
+          url = `https://huggingface.co/datasets/${owner}/${name}/resolve/main/meta/episodes_stats.jsonl`;
+        } else if (codebaseVersion === 'v2.0') {
+          url = `https://huggingface.co/datasets/${owner}/${name}/resolve/main/meta/stats.json`;
+        }
+        if (!url) throw new Error('No hay estadísticas para esta versión');
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('No se pudo descargar estadísticas');
+        if (codebaseVersion === 'v2.1') {
+          const text = await response.text();
+          const lines = text.split('\n').filter(Boolean);
+          const arr: { episode: number; meanReward: number }[] = [];
+          let idx = 0;
+          for (const line of lines) {
+            try {
+              const obj = JSON.parse(line);
+              if (obj.stats && typeof obj.stats.next_reward?.mean === 'number') {
+                arr.push({ episode: idx, meanReward: obj.stats.next_reward.mean });
+              }
+              idx++;
+            } catch (e) {}
+          }
+          if (!arr.length) throw new Error('No se encontraron estadísticas de recompensa');
+          setMeanRewards(arr);
+        } else if (codebaseVersion === 'v2.0') {
+          const stats = await response.json();
+          if (typeof stats.next_reward?.mean === 'number') {
+            setMeanRewards([{ episode: 0, meanReward: stats.next_reward.mean }]);
+          } else {
+            throw new Error('No se encontró la media global de recompensa');
+          }
+        }
+      } catch (e: any) {
+        setErrorMeanRewards(e.message || 'Error al cargar estadísticas');
+      } finally {
+        setLoadingMeanRewards(false);
+      }
+    };
+    fetchMeanRewards();
+  }, [owner, name, codebaseVersion]);
+
+  // --- NUEVO: Histograma de magnitud de acción ---
+  const [magnitudes, setMagnitudes] = useState<number[]>([]);
+  const [loadingMagnitudes, setLoadingMagnitudes] = useState(false);
+  const [errorMagnitudes, setErrorMagnitudes] = useState<string | null>(null);
+  const magnitudeBinSize = 0.05;
+
+  useEffect(() => {
+    if (!codebaseVersion) return;
+    if (codebaseVersion === 'v3.0') return;
+    const fetchMagnitudes = async () => {
+      setLoadingMagnitudes(true);
+      setErrorMagnitudes(null);
+      setMagnitudes([]);
+      try {
+        let url = '';
+        if (codebaseVersion === 'v2.1') {
+          url = `https://datasets-server.huggingface.co/rows?dataset=${encodeURIComponent(owner + '/' + name)}&config=default&split=train&offset=0&length=1000`;
+        } else if (codebaseVersion === 'v2.0') {
+          url = `https://huggingface.co/datasets/${owner}/${name}/resolve/main/meta/episodes.jsonl`;
+        }
+        if (!url) throw new Error('No hay fuente de acciones para esta versión');
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('No se pudo descargar los datos de acciones');
+        const mags: number[] = [];
+        if (codebaseVersion === 'v2.1') {
+          const result = await response.json();
+          const rows = result.rows ? result.rows.map((r: any) => r.row) : [];
+          for (const row of rows) {
+            if (Array.isArray(row.action)) {
+              const mag = Math.sqrt(row.action.reduce((acc: number, v: number) => acc + v * v, 0));
+              mags.push(mag);
+            }
+          }
+        } else if (codebaseVersion === 'v2.0') {
+          const text = await response.text();
+          const lines = text.split('\n').filter(Boolean);
+          for (const line of lines) {
+            try {
+              const obj = JSON.parse(line);
+              if (Array.isArray(obj.action)) {
+                const mag = Math.sqrt(obj.action.reduce((acc: number, v: number) => acc + v * v, 0));
+                mags.push(mag);
+              }
+            } catch (e) {}
+          }
+        }
+        if (!mags.length) throw new Error('No se encontraron acciones');
+        setMagnitudes(mags);
+      } catch (e: any) {
+        setErrorMagnitudes(e.message || 'Error al cargar magnitudes');
+      } finally {
+        setLoadingMagnitudes(false);
+      }
+    };
+    fetchMagnitudes();
+  }, [owner, name, codebaseVersion]);
+  const magnitudeBuckets = bucketizeFloat(magnitudes, magnitudeBinSize);
+
+  // --- NUEVO: Conteo de episodios por tarea ---
+  const [taskCounts, setTaskCounts] = useState<{ task: string; count: number }[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState(false);
+  const [errorTasks, setErrorTasks] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!codebaseVersion) return;
+    if (codebaseVersion === 'v3.0') return;
+    const fetchTasks = async () => {
+      setLoadingTasks(true);
+      setErrorTasks(null);
+      setTaskCounts([]);
+      try {
+        if (codebaseVersion !== 'v2.1' && codebaseVersion !== 'v2.0') throw new Error('No hay tareas para esta versión');
+        const url = `https://huggingface.co/datasets/${owner}/${name}/resolve/main/meta/episodes.jsonl`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('No se pudo descargar episodes.jsonl');
+        const text = await response.text();
+        const lines = text.split('\n').filter(Boolean);
+        const taskMap: Record<string, number> = {};
+        for (const line of lines) {
+          try {
+            const obj = JSON.parse(line);
+            if (Array.isArray(obj.tasks)) {
+              for (const t of obj.tasks) {
+                if (typeof t === 'string') {
+                  taskMap[t] = (taskMap[t] || 0) + 1;
+                }
+              }
+            }
+          } catch (e) {}
+        }
+        const arr = Object.entries(taskMap)
+          .map(([task, count]) => ({ task, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 10);
+        if (!arr.length) throw new Error('No se encontraron tareas');
+        setTaskCounts(arr);
+      } catch (e: any) {
+        setErrorTasks(e.message || 'Error al cargar tareas');
+      } finally {
+        setLoadingTasks(false);
+      }
+    };
+    fetchTasks();
+  }, [owner, name, codebaseVersion]);
+
+  // Determinar si hay al menos un gráfico para mostrar
+  const hasAnyChart =
+    (bucketData.length > 0 && !loadingLengths && !errorLengths) ||
+    (rewardBuckets.length > 0 && !loadingRewards && !errorRewards) ||
+    (meanRewards.length > 0 && !loadingMeanRewards && !errorMeanRewards) ||
+    (magnitudeBuckets.length > 0 && !loadingMagnitudes && !errorMagnitudes) ||
+    (taskCounts.length > 0 && !loadingTasks && !errorTasks);
+
   return (
     <div className="bg-white dark:bg-gray-900 rounded-lg shadow p-6">
-      <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Visualización</h2>
-      <div className="mb-6">
-        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          Selecciona un campo para ver su histograma:
-        </h3>
-        <div className="flex flex-wrap gap-2">
-          {MAIN_FIELDS.map((field) => (
-            <button
-              key={field}
-              onClick={() => setSelectedField(field)}
-              className={`px-3 py-1 rounded-full text-sm border transition-colors ${
-                selectedField === field
-                  ? 'bg-blue-500 text-white border-blue-500'
-                  : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700'
-              }`}
-            >
-              {field}
-            </button>
-          ))}
+      {/* --- Eliminar bloque de 'Visualización' de campos simples --- */}
+      {/* Mostrar los gráficos útiles, o un mensaje si no hay ninguno */}
+      {bucketData.length > 0 && !loadingLengths && !errorLengths && (
+        <div className="mt-10">
+          <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Distribución de longitudes de episodios</h3>
+          <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Este histograma muestra cuántos episodios tienen una longitud (en frames) dentro de cada intervalo de {bucketSize} frames.</p>
+          <div className="h-[400px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={bucketData} margin={{ top: 20, right: 30, left: 10, bottom: 60 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="intervalo" angle={-45} textAnchor="end" interval={0} height={60} />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Bar dataKey="cantidad" fill="#3b82f6" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
-      </div>
-      {error ? (
-        <div className="text-center py-8 text-red-500">Error: {error}</div>
-      ) : loading ? (
-        <div className="text-center py-8">Cargando datos...</div>
-      ) : getHistogramData(selectedField).length === 0 ? (
-        <div className="text-center py-8 text-gray-500">No hay datos para graficar</div>
-      ) : (
-        <div className="h-[400px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={getHistogramData(selectedField)}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="value" />
-              <YAxis allowDecimals={false} />
-              <Tooltip />
-              <Bar dataKey="count" fill="#3b82f6" />
-            </BarChart>
-          </ResponsiveContainer>
+      )}
+      {rewardBuckets.length > 0 && !loadingRewards && !errorRewards && (
+        <div className="mt-10">
+          <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Distribución de recompensas por paso</h3>
+          <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Este histograma muestra la distribución de las recompensas obtenidas en cada paso del dataset.</p>
+          <div className="h-[400px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={rewardBuckets} margin={{ top: 20, right: 30, left: 10, bottom: 60 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="intervalo" angle={-45} textAnchor="end" interval={0} height={60} />
+                <YAxis allowDecimals={false} />
+                <Tooltip formatter={(value: any, name: any, props: any) => [`${value} pasos`, 'Cantidad']} labelFormatter={(label) => `Recompensa ${label}`} />
+                <Bar dataKey="cantidad" fill="#10b981" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+      {meanRewards.length > 0 && !loadingMeanRewards && !errorMeanRewards && (
+        <div className="mt-10">
+          <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Recompensa promedio por episodio</h3>
+          <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Esta serie muestra cómo cambia la recompensa promedio a lo largo de los episodios.</p>
+          <div className="h-[400px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={meanRewards} margin={{ top: 20, right: 30, left: 10, bottom: 60 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="episode" />
+                <YAxis allowDecimals={true} />
+                <Tooltip formatter={(value: any) => [`${value.toFixed(3)}`, 'Recompensa media']} labelFormatter={(label) => `Episodio ${label}`} />
+                <Bar dataKey="meanReward" fill="#6366f1" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+      {magnitudeBuckets.length > 0 && !loadingMagnitudes && !errorMagnitudes && (
+        <div className="mt-10">
+          <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Distribución de magnitudes de acción</h3>
+          <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Este histograma muestra cuán grandes son, en promedio, los pasos de control (magnitud de la acción).</p>
+          <div className="h-[400px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={magnitudeBuckets} margin={{ top: 20, right: 30, left: 10, bottom: 60 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="intervalo" angle={-45} textAnchor="end" interval={0} height={60} />
+                <YAxis allowDecimals={false} />
+                <Tooltip formatter={(value: any, name: any, props: any) => [`${value} pasos`, 'Cantidad']} labelFormatter={(label) => `Magnitud ${label}`} />
+                <Bar dataKey="cantidad" fill="#f59e42" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+      {taskCounts.length > 0 && !loadingTasks && !errorTasks && (
+        <div className="mt-10">
+          <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Número de episodios por tarea</h3>
+          <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Este gráfico muestra cuántos episodios hay para cada descripción de tarea (top 10).</p>
+          <div className="h-[400px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={taskCounts} layout="vertical" margin={{ top: 20, right: 30, left: 100, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" allowDecimals={false} />
+                <YAxis dataKey="task" type="category" width={200} />
+                <Tooltip formatter={(value: any, name: any, props: any) => [`${value} episodios`, 'Cantidad']} labelFormatter={(label) => `${label}`} />
+                <Bar dataKey="count" fill="#ef4444" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+      {!hasAnyChart && (
+        <div className="text-center py-12 text-gray-500 text-lg font-medium">
+          No se encontraron diagramas para representar en este dataset.
         </div>
       )}
     </div>
