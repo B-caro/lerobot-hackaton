@@ -1,5 +1,5 @@
 "use client";
-import { useState } from 'react';
+import React, { useState } from 'react';
 
 interface VideoSectionProps {
   owner: string;
@@ -17,7 +17,11 @@ function splitPath(path: string) {
 
 export default function VideoSection({ owner, name, videoFiles }: VideoSectionProps) {
   if (!videoFiles.length) {
-    return <div className="text-center py-8 text-gray-500">No hay videos disponibles para este dataset.</div>;
+    return (
+      <div className="bg-white dark:bg-gray-900 rounded-lg shadow p-6 my-8 flex items-center justify-center min-h-[120px]">
+        <span className="text-center text-blue-600 dark:text-blue-300 font-medium text-base">No hay videos disponibles para este dataset.</span>
+      </div>
+    );
   }
   const [selected, setSelected] = useState(videoFiles[0]);
   const rawUrl = `https://huggingface.co/datasets/${owner}/${name}/resolve/main/${selected}`;
@@ -50,13 +54,8 @@ export default function VideoSection({ owner, name, videoFiles }: VideoSectionPr
           </ul>
         </div>
         {/* Reproductor de video */}
-        <div className="flex-1 flex items-center justify-center min-w-0">
-          <video
-            src={rawUrl}
-            controls
-            preload="metadata"
-            style={{ width: '100%', maxWidth: 700, borderRadius: 12, background: '#000', margin: '0 auto' }}
-          />
+        <div className="flex-1 flex items-center justify-center min-h-[300px]">
+          <video key={selected} src={rawUrl} controls className="w-full max-w-2xl rounded-lg shadow-lg bg-black" />
         </div>
       </div>
     </div>

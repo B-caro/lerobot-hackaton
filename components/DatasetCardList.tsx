@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import DatasetCard from './DatasetCard';
+import { useSearchParams } from 'next/navigation';
 
 interface Dataset {
   id: string;
@@ -31,16 +32,15 @@ export default function DatasetCardList({ searchQuery }: DatasetCardListProps) {
   const [loading, setLoading] = useState(false);
   const [orderBy, setOrderBy] = useState<'recent' | 'downloads' | 'likes'>('recent');
   const [versionFilter, setVersionFilter] = useState<'all' | 'v2' | 'v3'>('all');
+  const searchParams = useSearchParams();
 
-  // Leer filtros de la URL al cargar
+  // Leer filtros de la URL cada vez que cambian los parámetros
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    const v = params.get('version');
-    const o = params.get('order');
+    const v = searchParams.get('version');
+    const o = searchParams.get('order');
     if (v === 'v2' || v === 'v3' || v === 'all') setVersionFilter(v);
     if (o === 'recent' || o === 'downloads' || o === 'likes') setOrderBy(o);
-  }, []);
+  }, [searchParams]);
 
   // Guardar filtros en la URL cuando cambian
   useEffect(() => {
@@ -144,7 +144,7 @@ export default function DatasetCardList({ searchQuery }: DatasetCardListProps) {
           </button>
         ))}
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 pb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {sorted.map((dataset) => (
           <DatasetCard key={dataset.id} dataset={dataset} />
         ))}

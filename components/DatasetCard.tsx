@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 
 interface Dataset {
   id: string;
@@ -16,9 +17,12 @@ interface DatasetCardProps {
 export default function DatasetCard({ dataset }: DatasetCardProps) {
   const [owner, name] = dataset.id.split('/');
   const displayName = dataset.name && dataset.name !== '' ? dataset.name : dataset.id;
+  const searchParams = useSearchParams();
+  const params = searchParams.toString();
+  const href = `/dataset/lerobot/${name}${params ? `?${params}` : ''}`;
 
   return (
-    <Link href={`/dataset/lerobot/${name}`}>
+    <Link href={href}>
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl p-6 hover:shadow-xl transition-shadow shadow-md flex flex-col h-full">
         <h2 className="text-xl font-semibold mb-1 truncate" title={displayName}>{displayName}</h2>
         {dataset.version && (
