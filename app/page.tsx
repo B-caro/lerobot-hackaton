@@ -40,7 +40,7 @@ export default function Home() {
 
   return (
     <main className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8">Explorador de Datasets</h1>
+      <h1 className="text-3xl font-bold mb-8">Explorador de Datasets de LeRobot</h1>
       <DatasetSearchBar onSearch={handleSearch} suggestions={suggestions} />
       <DatasetCardList searchQuery={searchQuery} />
     </main>
