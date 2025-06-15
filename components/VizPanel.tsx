@@ -18,6 +18,14 @@ import {
   Radar,
 } from 'recharts';
 import React from 'react';
+import { bucketize, bucketizeFloat } from './viz/vizUtils';
+import V3Dashboard from './viz/V3Dashboard';
+import Histogram from './viz/Histogram';
+import RadarJointsChart from './viz/RadarJointsChart';
+import ScatterLengthReward from './viz/ScatterLengthReward';
+import LineTotalReward from './viz/LineTotalReward';
+import TaskBarChart from './viz/TaskBarChart';
+import TasksPerEpisodeChart from './viz/TasksPerEpisodeChart';
 
 interface VizPanelProps {
   owner: string;
@@ -32,34 +40,6 @@ const MAIN_FIELDS = [
   'index',
   'task_index',
 ];
-
-// --- NUEVO: función para agrupar en buckets ---
-function bucketize(lengths: number[], bucketSize: number) {
-  if (!lengths.length) return [];
-  const min = Math.min(...lengths);
-  const max = Math.max(...lengths);
-  const buckets: { intervalo: string; cantidad: number }[] = [];
-  for (let start = Math.floor(min / bucketSize) * bucketSize; start <= max; start += bucketSize) {
-    const end = start + bucketSize - 1;
-    const count = lengths.filter((l) => l >= start && l <= end).length;
-    buckets.push({ intervalo: `${start}-${end}`, cantidad: count });
-  }
-  return buckets.filter((b) => b.cantidad > 0);
-}
-
-// --- NUEVO: función para agrupar en buckets de tipo float (para next_reward, magnitud) ---
-function bucketizeFloat(values: number[], binSize: number) {
-  if (!values.length) return [];
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const buckets: { intervalo: string; cantidad: number }[] = [];
-  for (let start = Math.floor(min / binSize) * binSize; start <= max; start += binSize) {
-    const end = start + binSize;
-    const count = values.filter((v) => v >= start && v < end).length;
-    buckets.push({ intervalo: `${start.toFixed(2)}–${end.toFixed(2)}`, cantidad: count });
-  }
-  return buckets.filter((b) => b.cantidad > 0);
-}
 
 // Tick personalizado para etiquetas largas en el eje Y
 const TaskTick = (props: any) => {
@@ -81,13 +61,13 @@ export default function VizPanel({ owner, name, features }: VizPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // --- NUEVO: estados para histograma de longitudes ---
+  // --- Estados para histograma de longitudes ---
   const [lengths, setLengths] = useState<number[]>([]);
   const [loadingLengths, setLoadingLengths] = useState(false);
   const [errorLengths, setErrorLengths] = useState<string | null>(null);
   const bucketSize = 10;
 
-  // --- NUEVO: Estado para versión y metadatos ---
+  // --- Estado para versión y metadatos ---
   const [codebaseVersion, setCodebaseVersion] = useState<string | null>(null);
   const [metaError, setMetaError] = useState<string | null>(null);
 
@@ -96,6 +76,54 @@ export default function VizPanel({ owner, name, features }: VizPanelProps) {
   const [v3Stats, setV3Stats] = useState<any>(null);
   const [loadingV3, setLoadingV3] = useState(false);
   const [errorV3, setErrorV3] = useState<string | null>(null);
+
+  // --- Estados para histograma de recompensas ---
+  const [rewards, setRewards] = useState<number[]>([]);
+  const [loadingRewards, setLoadingRewards] = useState(false);
+  const [errorRewards, setErrorRewards] = useState<string | null>(null);
+  const rewardBinSize = 0.1;
+
+  // --- Estados para recompensa media por episodio ---
+  const [meanRewards, setMeanRewards] = useState<{ episode: number; meanReward: number }[]>([]);
+  const [loadingMeanRewards, setLoadingMeanRewards] = useState(false);
+  const [errorMeanRewards, setErrorMeanRewards] = useState<string | null>(null);
+
+  // --- Estados para histograma de magnitud de acción ---
+  const [magnitudes, setMagnitudes] = useState<number[]>([]);
+  const [loadingMagnitudes, setLoadingMagnitudes] = useState(false);
+  const [errorMagnitudes, setErrorMagnitudes] = useState<string | null>(null);
+  const magnitudeBinSize = 0.05;
+
+  // --- Estados para conteo de episodios por tarea ---
+  const [taskCounts, setTaskCounts] = useState<{ task: string; count: number }[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState(false);
+  const [errorTasks, setErrorTasks] = useState<string | null>(null);
+
+  // --- Estados para dispersión longitud vs recompensa media ---
+  const [lengthVsReward, setLengthVsReward] = useState<{ episode: number; length: number; meanReward: number }[]>([]);
+  const [loadingLengthVsReward, setLoadingLengthVsReward] = useState(false);
+  const [errorLengthVsReward, setErrorLengthVsReward] = useState<string | null>(null);
+
+  // --- Estados para recompensa total por episodio ---
+  const [totalRewardPerEpisode, setTotalRewardPerEpisode] = useState<{ episode: number; totalReward: number }[]>([]);
+  const [loadingTotalReward, setLoadingTotalReward] = useState(false);
+  const [errorTotalReward, setErrorTotalReward] = useState<string | null>(null);
+
+  // --- Estados para histograma de deltas de tiempo ---
+  const [deltas, setDeltas] = useState<number[]>([]);
+  const [loadingDeltas, setLoadingDeltas] = useState(false);
+  const [errorDeltas, setErrorDeltas] = useState<string | null>(null);
+  const deltaBinSize = 0.01;
+
+  // --- Estados para radar de posición articular media ---
+  const [meanJoints, setMeanJoints] = useState<{ joint: string; mean: number }[]>([]);
+  const [loadingJoints, setLoadingJoints] = useState(false);
+  const [errorJoints, setErrorJoints] = useState<string | null>(null);
+
+  // --- Estados para histograma de episodios por número de tareas ---
+  const [tasksPerEpisode, setTasksPerEpisode] = useState<{ bucket: string; count: number }[]>([]);
+  const [loadingTasksPerEpisode, setLoadingTasksPerEpisode] = useState(false);
+  const [errorTasksPerEpisode, setErrorTasksPerEpisode] = useState<string | null>(null);
 
   // Detectar versión y metadatos
   useEffect(() => {
@@ -177,17 +205,6 @@ export default function VizPanel({ owner, name, features }: VizPanelProps) {
   const bucketData = bucketize(lengths, bucketSize);
 
   // --- NUEVO: Histograma de recompensas (next_reward) ---
-  const [rewards, setRewards] = useState<number[]>([]);
-  const [loadingRewards, setLoadingRewards] = useState(false);
-  const [errorRewards, setErrorRewards] = useState<string | null>(null);
-  const rewardBinSize = 0.1;
-
-  // --- MODIFICAR: Fetches condicionales según versión ---
-  // Para cada fetch, sólo intentar si la versión lo soporta
-  // v2.1: episodes.jsonl + episodes_stats.jsonl
-  // v2.0: episodes.jsonl + stats.json
-  // v3.0: Parquet (no soportado)
-
   useEffect(() => {
     if (!codebaseVersion) return;
     if (codebaseVersion === 'v3.0') return;
@@ -242,10 +259,6 @@ export default function VizPanel({ owner, name, features }: VizPanelProps) {
   const rewardBuckets = bucketizeFloat(rewards, rewardBinSize);
 
   // --- NUEVO: Serie temporal de recompensa media por episodio ---
-  const [meanRewards, setMeanRewards] = useState<{ episode: number; meanReward: number }[]>([]);
-  const [loadingMeanRewards, setLoadingMeanRewards] = useState(false);
-  const [errorMeanRewards, setErrorMeanRewards] = useState<string | null>(null);
-
   useEffect(() => {
     if (!codebaseVersion) return;
     if (codebaseVersion === 'v3.0') return;
@@ -297,11 +310,6 @@ export default function VizPanel({ owner, name, features }: VizPanelProps) {
   }, [owner, name, codebaseVersion]);
 
   // --- NUEVO: Histograma de magnitud de acción ---
-  const [magnitudes, setMagnitudes] = useState<number[]>([]);
-  const [loadingMagnitudes, setLoadingMagnitudes] = useState(false);
-  const [errorMagnitudes, setErrorMagnitudes] = useState<string | null>(null);
-  const magnitudeBinSize = 0.05;
-
   useEffect(() => {
     if (!codebaseVersion) return;
     if (codebaseVersion === 'v3.0') return;
@@ -355,10 +363,6 @@ export default function VizPanel({ owner, name, features }: VizPanelProps) {
   const magnitudeBuckets = bucketizeFloat(magnitudes, magnitudeBinSize);
 
   // --- NUEVO: Conteo de episodios por tarea ---
-  const [taskCounts, setTaskCounts] = useState<{ task: string; count: number }[]>([]);
-  const [loadingTasks, setLoadingTasks] = useState(false);
-  const [errorTasks, setErrorTasks] = useState<string | null>(null);
-
   useEffect(() => {
     if (!codebaseVersion) return;
     if (codebaseVersion === 'v3.0') return;
@@ -402,32 +406,6 @@ export default function VizPanel({ owner, name, features }: VizPanelProps) {
   }, [owner, name, codebaseVersion]);
 
   // --- 1. Dispersión longitud vs recompensa media ---
-  const [lengthVsReward, setLengthVsReward] = useState<{ episode: number; length: number; meanReward: number }[]>([]);
-  const [loadingLengthVsReward, setLoadingLengthVsReward] = useState(false);
-  const [errorLengthVsReward, setErrorLengthVsReward] = useState<string | null>(null);
-
-  // --- 2. Recompensa total por episodio ---
-  const [totalRewardPerEpisode, setTotalRewardPerEpisode] = useState<{ episode: number; totalReward: number }[]>([]);
-  const [loadingTotalReward, setLoadingTotalReward] = useState(false);
-  const [errorTotalReward, setErrorTotalReward] = useState<string | null>(null);
-
-  // --- 3. Histograma de deltas de tiempo ---
-  const [deltas, setDeltas] = useState<number[]>([]);
-  const [loadingDeltas, setLoadingDeltas] = useState(false);
-  const [errorDeltas, setErrorDeltas] = useState<string | null>(null);
-  const deltaBinSize = 0.01;
-
-  // --- 4. Radar de posición articular media ---
-  const [meanJoints, setMeanJoints] = useState<{ joint: string; mean: number }[]>([]);
-  const [loadingJoints, setLoadingJoints] = useState(false);
-  const [errorJoints, setErrorJoints] = useState<string | null>(null);
-
-  // --- 5. Histograma de episodios por número de tareas ---
-  const [tasksPerEpisode, setTasksPerEpisode] = useState<{ bucket: string; count: number }[]>([]);
-  const [loadingTasksPerEpisode, setLoadingTasksPerEpisode] = useState(false);
-  const [errorTasksPerEpisode, setErrorTasksPerEpisode] = useState<string | null>(null);
-
-  // --- 1 y 2: Fetch y join de episodes.jsonl y episodes_stats.jsonl ---
   useEffect(() => {
     if (!codebaseVersion || codebaseVersion === 'v3.0') return;
     const fetchLengthVsReward = async () => {
@@ -634,7 +612,7 @@ export default function VizPanel({ owner, name, features }: VizPanelProps) {
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-lg shadow p-6">
-      {/* --- Dashboard de resumen para v3.0 --- */}
+      {/* Dashboard v3.0 */}
       {codebaseVersion === 'v3.0' && (
         <>
           {loadingV3 ? (
@@ -642,310 +620,95 @@ export default function VizPanel({ owner, name, features }: VizPanelProps) {
           ) : errorV3 ? (
             <div className="text-center py-12 text-red-500 text-lg font-medium">Lo sentimos, este dataset v3.0 no expone estadísticas globales. No hay gráficos que mostrar.</div>
           ) : v3Info && v3Stats ? (
-            <>
-              {/* Gráficos de medias y std para reward, timestamp, frame_index */}
-              {(!!(v3Stats.next?.reward && typeof v3Stats.next.reward.mean === 'number' && typeof v3Stats.next.reward.std === 'number') ||
-                !!(v3Stats.timestamp && typeof v3Stats.timestamp.mean === 'number' && typeof v3Stats.timestamp.std === 'number') ||
-                !!(v3Stats.frame_index && typeof v3Stats.frame_index.mean === 'number' && typeof v3Stats.frame_index.std === 'number')) && (
-                <div className="mt-10 w-full">
-                  <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Estadísticas globales de recompensa, tiempo y frames</h3>
-                  <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Aquí se muestra la media y desviación estándar de la recompensa, el timestamp y el índice de frame para todo el dataset.</p>
-                  <div className="flex flex-col md:flex-row gap-8 w-full">
-                    {/* next.reward */}
-                    {v3Stats.next?.reward && typeof v3Stats.next.reward.mean === 'number' && typeof v3Stats.next.reward.std === 'number' && (
-                      <div className="flex-1 flex flex-col h-full min-h-[400px]">
-                        <h4 className="font-medium mb-2 text-blue-700 dark:text-blue-200">Recompensa</h4>
-                        <ResponsiveContainer width="100%" height={400}>
-                          <BarChart data={[{ name: 'Media', value: v3Stats.next.reward.mean }, { name: 'Std', value: v3Stats.next.reward.std }]}>
-                            <XAxis dataKey="name" />
-                            <YAxis />
-                            <Tooltip />
-                            <Bar dataKey="value" fill="#3b82f6" />
-                          </BarChart>
-                        </ResponsiveContainer>
-                        <div className="text-xs mt-2 text-gray-500">Min: {v3Stats.next.reward.min}, Max: {v3Stats.next.reward.max}</div>
-                      </div>
-                    )}
-                    {/* timestamp */}
-                    {v3Stats.timestamp && typeof v3Stats.timestamp.mean === 'number' && typeof v3Stats.timestamp.std === 'number' && (
-                      <div className="flex-1 flex flex-col h-full min-h-[400px]">
-                        <h4 className="font-medium mb-2 text-blue-700 dark:text-blue-200">Timestamp</h4>
-                        <ResponsiveContainer width="100%" height={400}>
-                          <BarChart data={[
-                            { name: 'Media', value: isNaN(v3Stats.timestamp.mean) ? 0 : v3Stats.timestamp.mean },
-                            { name: 'Std', value: isNaN(v3Stats.timestamp.std) ? 0 : v3Stats.timestamp.std }
-                          ]}>
-                            <XAxis dataKey="name" />
-                            <YAxis />
-                            <Tooltip />
-                            <Bar dataKey="value" fill="#6366f1" />
-                          </BarChart>
-                        </ResponsiveContainer>
-                        <div className="text-xs mt-2 text-gray-500">Min: {v3Stats.timestamp.min}, Max: {v3Stats.timestamp.max}</div>
-                      </div>
-                    )}
-                    {/* frame_index */}
-                    {v3Stats.frame_index && typeof v3Stats.frame_index.mean === 'number' && typeof v3Stats.frame_index.std === 'number' && (
-                      <div className="flex-1 flex flex-col h-full min-h-[400px]">
-                        <h4 className="font-medium mb-2 text-blue-700 dark:text-blue-200">Frame Index</h4>
-                        <ResponsiveContainer width="100%" height={400}>
-                          <BarChart data={[
-                            { name: 'Media', value: isNaN(v3Stats.frame_index.mean) ? 0 : v3Stats.frame_index.mean },
-                            { name: 'Std', value: isNaN(v3Stats.frame_index.std) ? 0 : v3Stats.frame_index.std }
-                          ]}>
-                            <XAxis dataKey="name" />
-                            <YAxis />
-                            <Tooltip />
-                            <Bar dataKey="value" fill="#f59e42" />
-                          </BarChart>
-                        </ResponsiveContainer>
-                        <div className="text-xs mt-2 text-gray-500">Min: {v3Stats.frame_index.min}, Max: {v3Stats.frame_index.max}</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-              {/* Gráficos de medias y std para observation.state y action */}
-              <div className="mt-10">
-                <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Estadísticas globales de observaciones y acciones</h3>
-                <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Medias y desviaciones estándar por dimensión para observation.state y action.</p>
-                <div className="flex flex-col gap-8 w-full">
-                  {/* observation.state (media) */}
-                  {v3Stats.observation?.state?.mean && Array.isArray(v3Stats.observation.state.mean) && v3Stats.observation.state.mean.length > 0 && (
-                    <div className="flex-1 flex flex-col h-full min-h-[240px]">
-                      <h4 className="font-medium mb-2 text-blue-700 dark:text-blue-200">Observation State (media)</h4>
-                      <ResponsiveContainer width="100%" height={200}>
-                        <BarChart data={v3Stats.observation.state.mean.map((v: number, i: number) => ({ name: `S${i + 1}`, value: v }))}>
-                          <XAxis dataKey="name" />
-                          <YAxis />
-                          <Tooltip />
-                          <Bar dataKey="value" fill="#10b981" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-                  {/* observation.state (std) */}
-                  {v3Stats.observation?.state?.std && Array.isArray(v3Stats.observation.state.std) && v3Stats.observation.state.std.length > 0 && (
-                    <div className="flex-1 flex flex-col h-full min-h-[240px]">
-                      <h4 className="font-medium mb-2 text-blue-700 dark:text-blue-200">Observation State (std)</h4>
-                      <ResponsiveContainer width="100%" height={200}>
-                        <BarChart data={v3Stats.observation.state.std.map((v: number, i: number) => ({ name: `S${i + 1}`, value: v }))}>
-                          <XAxis dataKey="name" />
-                          <YAxis />
-                          <Tooltip />
-                          <Bar dataKey="value" fill="#f43f5e" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-                  {/* action (media) */}
-                  {v3Stats.action?.mean && Array.isArray(v3Stats.action.mean) && v3Stats.action.mean.length > 0 && (
-                    <div className="flex-1 flex flex-col h-full min-h-[240px]">
-                      <h4 className="font-medium mb-2 text-blue-700 dark:text-blue-200">Action (media)</h4>
-                      <ResponsiveContainer width="100%" height={200}>
-                        <BarChart data={v3Stats.action.mean.map((v: number, i: number) => ({ name: `A${i + 1}`, value: v }))}>
-                          <XAxis dataKey="name" />
-                          <YAxis />
-                          <Tooltip />
-                          <Bar dataKey="value" fill="#0ea5e9" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-                  {/* action (std) */}
-                  {v3Stats.action?.std && Array.isArray(v3Stats.action.std) && v3Stats.action.std.length > 0 && (
-                    <div className="flex-1 flex flex-col h-full min-h-[240px]">
-                      <h4 className="font-medium mb-2 text-blue-700 dark:text-blue-200">Action (std)</h4>
-                      <ResponsiveContainer width="100%" height={200}>
-                        <BarChart data={v3Stats.action.std.map((v: number, i: number) => ({ name: `A${i + 1}`, value: v }))}>
-                          <XAxis dataKey="name" />
-                          <YAxis />
-                          <Tooltip />
-                          <Bar dataKey="value" fill="#ef4444" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </>
+            <V3Dashboard v3Info={v3Info} v3Stats={v3Stats} />
           ) : null}
         </>
       )}
-      {/* --- Eliminar bloque de 'Visualización' de campos simples --- */}
-      {/* Mostrar los gráficos útiles, o un mensaje si no hay ninguno */}
+
+      {/* Histograma de longitudes */}
       {bucketData.length > 0 && !loadingLengths && !errorLengths && (
-        <div className="mt-10">
-          <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Distribución de longitudes de episodios</h3>
-          <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Este histograma muestra cuántos episodios tienen una longitud (en frames) dentro de cada intervalo de {bucketSize} frames.</p>
-          <div className="h-[400px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={bucketData} margin={{ top: 20, right: 30, left: 10, bottom: 60 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="intervalo" angle={-45} textAnchor="end" interval={0} height={60} />
-                <YAxis allowDecimals={false} />
-                <Tooltip />
-                <Bar dataKey="cantidad" fill="#3b82f6" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        <Histogram
+          title="Distribución de longitudes de episodios"
+          description={`Este histograma muestra cuántos episodios tienen una longitud (en frames) dentro de cada intervalo de ${bucketSize} frames.`}
+          data={bucketData}
+          color="#3b82f6"
+        />
       )}
+
+      {/* Histograma de recompensas */}
       {rewardBuckets.length > 0 && !loadingRewards && !errorRewards && (
-        <div className="mt-10">
-          <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Distribución de recompensas por paso</h3>
-          <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Este histograma muestra la distribución de las recompensas obtenidas en cada paso del dataset.</p>
-          <div className="h-[400px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={rewardBuckets} margin={{ top: 20, right: 30, left: 10, bottom: 60 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="intervalo" angle={-45} textAnchor="end" interval={0} height={60} />
-                <YAxis allowDecimals={false} />
-                <Tooltip formatter={(value: any, name: any, props: any) => [`${value} pasos`, 'Cantidad']} labelFormatter={(label) => `Recompensa ${label}`} />
-                <Bar dataKey="cantidad" fill="#10b981" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        <Histogram
+          title="Distribución de recompensas por paso"
+          description="Este histograma muestra la distribución de las recompensas obtenidas en cada paso del dataset."
+          data={rewardBuckets}
+          color="#10b981"
+          tooltipFormatter={(value: any) => [`${value} pasos`, 'Cantidad']}
+          tooltipLabelFormatter={(label) => `Recompensa ${label}`}
+        />
       )}
+
+      {/* Recompensa media por episodio */}
       {meanRewards.length > 0 && !loadingMeanRewards && !errorMeanRewards && (
-        <div className="mt-10">
-          <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Recompensa promedio por episodio</h3>
-          <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Esta serie muestra cómo cambia la recompensa promedio a lo largo de los episodios.</p>
-          <div className="h-[400px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={meanRewards} margin={{ top: 20, right: 30, left: 10, bottom: 60 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="episode" />
-                <YAxis allowDecimals={true} />
-                <Tooltip formatter={(value: any) => [`${value.toFixed(3)}`, 'Recompensa media']} labelFormatter={(label) => `Episodio ${label}`} />
-                <Bar dataKey="meanReward" fill="#6366f1" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        <Histogram
+          title="Recompensa promedio por episodio"
+          description="Esta serie muestra cómo cambia la recompensa promedio a lo largo de los episodios."
+          data={meanRewards.map(({ episode, meanReward }) => ({ intervalo: episode.toString(), cantidad: meanReward }))}
+          color="#6366f1"
+          tooltipFormatter={(value: any) => [`${value.toFixed(3)}`, 'Recompensa media']}
+          tooltipLabelFormatter={(label) => `Episodio ${label}`}
+        />
       )}
+
+      {/* Histograma de magnitudes */}
       {magnitudeBuckets.length > 0 && !loadingMagnitudes && !errorMagnitudes && (
-        <div className="mt-10">
-          <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Distribución de magnitudes de acción</h3>
-          <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Este histograma muestra cuán grandes son, en promedio, los pasos de control (magnitud de la acción).</p>
-          <div className="h-[400px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={magnitudeBuckets} margin={{ top: 20, right: 30, left: 10, bottom: 60 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="intervalo" angle={-45} textAnchor="end" interval={0} height={60} />
-                <YAxis allowDecimals={false} />
-                <Tooltip formatter={(value: any, name: any, props: any) => [`${value} pasos`, 'Cantidad']} labelFormatter={(label) => `Magnitud ${label}`} />
-                <Bar dataKey="cantidad" fill="#f59e42" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        <Histogram
+          title="Distribución de magnitudes de acción"
+          description="Este histograma muestra cuán grandes son, en promedio, los pasos de control (magnitud de la acción)."
+          data={magnitudeBuckets}
+          color="#f59e42"
+          tooltipFormatter={(value: any) => [`${value} pasos`, 'Cantidad']}
+          tooltipLabelFormatter={(label) => `Magnitud ${label}`}
+        />
       )}
+
+      {/* Gráfico de tareas */}
       {taskCounts.length > 0 && !loadingTasks && !errorTasks && (
-        <div className="mt-10">
-          <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Número de episodios por tarea</h3>
-          <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Este gráfico muestra cuántos episodios hay para cada descripción de tarea (top 10).</p>
-          <div className="h-[400px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={taskCounts} layout="vertical" margin={{ top: 20, right: 30, left: 140, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" allowDecimals={false} />
-                <YAxis dataKey="task" type="category" width={140} tick={<TaskTick />} />
-                <Tooltip formatter={(value: any, name: any, props: any) => [`${value} episodios`, 'Cantidad']} labelFormatter={(label) => `${label}`} />
-                <Bar dataKey="count" fill="#ef4444" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        <TaskBarChart data={taskCounts} />
       )}
-      {/* --- 1. Dispersión longitud vs recompensa media --- */}
+
+      {/* Dispersión longitud vs recompensa */}
       {lengthVsReward.length > 0 && !loadingLengthVsReward && !errorLengthVsReward && (
-        <div className="mt-10">
-          <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Longitud vs. recompensa media por episodio</h3>
-          <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Cada punto representa un episodio. El eje X es la longitud (frames) y el eje Y la recompensa media.</p>
-          <div className="h-[400px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <ScatterChart>
-                <XAxis dataKey="length" name="Longitud (frames)" />
-                <YAxis dataKey="meanReward" name="Recompensa media" />
-                <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={(v: any, n: any) => [v, n === 'length' ? 'Longitud' : 'Recompensa media']} />
-                <Scatter data={lengthVsReward} fill="#0ea5e9" />
-              </ScatterChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        <ScatterLengthReward data={lengthVsReward} />
       )}
-      {/* --- 2. Recompensa total por episodio --- */}
+
+      {/* Recompensa total por episodio */}
       {totalRewardPerEpisode.length > 0 && !loadingTotalReward && !errorTotalReward && (
-        <div className="mt-10">
-          <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Recompensa acumulada por episodio</h3>
-          <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">La recompensa total estimada para cada episodio (recompensa media × longitud).</p>
-          <div className="h-[400px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={totalRewardPerEpisode} margin={{ top: 20, right: 30, left: 10, bottom: 60 }}>
-                <XAxis dataKey="episode" />
-                <YAxis />
-                <Tooltip formatter={(v: any) => [v, 'Recompensa total']} labelFormatter={(l) => `Episodio ${l}`} />
-                <Line type="monotone" dataKey="totalReward" stroke="#f43f5e" dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        <LineTotalReward data={totalRewardPerEpisode} />
       )}
-      {/* --- 3. Histograma de deltas de tiempo --- */}
+
+      {/* Histograma de deltas */}
       {deltaBuckets.length > 0 && !loadingDeltas && !errorDeltas && (
-        <div className="mt-10">
-          <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Distribución de Δt entre frames</h3>
-          <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Histograma de las diferencias de tiempo entre frames consecutivos.</p>
-          <div className="h-[400px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={deltaBuckets} margin={{ top: 20, right: 30, left: 10, bottom: 60 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="intervalo" angle={-45} textAnchor="end" interval={0} height={60} />
-                <YAxis allowDecimals={false} />
-                <Tooltip formatter={(v: any) => [v, 'Cantidad']} labelFormatter={(l) => `Δt ${l} s`} />
-                <Bar dataKey="cantidad" fill="#6366f1" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        <Histogram
+          title="Distribución de Δt entre frames"
+          description="Histograma de las diferencias de tiempo entre frames consecutivos."
+          data={deltaBuckets}
+          color="#6366f1"
+          tooltipFormatter={(v: any) => [v, 'Cantidad']}
+          tooltipLabelFormatter={(l) => `Δt ${l} s`}
+        />
       )}
-      {/* --- 4. Radar de posición articular media --- */}
+
+      {/* Radar de articulaciones */}
       {meanJoints.length > 0 && !loadingJoints && !errorJoints && (
-        <div className="mt-10">
-          <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Valores promedio de articulaciones</h3>
-          <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Radar de los valores medios de cada articulación del robot.</p>
-          <div className="h-[400px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={meanJoints} outerRadius="80%">
-                <PolarGrid />
-                <PolarAngleAxis dataKey="joint" />
-                <PolarRadiusAxis />
-                <Radar name="Valor medio" dataKey="mean" stroke="#0ea5e9" fill="#0ea5e9" fillOpacity={0.6} />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        <RadarJointsChart data={meanJoints} />
       )}
-      {/* --- 5. Histograma de episodios por número de tareas --- */}
+
+      {/* Tareas por episodio */}
       {tasksPerEpisode.length > 0 && !loadingTasksPerEpisode && !errorTasksPerEpisode && (
-        <div className="mt-10">
-          <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Número de episodios según cantidad de tareas</h3>
-          <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Histograma del número de tareas que tiene cada episodio.</p>
-          <div className="h-[400px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={tasksPerEpisode} layout="vertical" margin={{ top: 20, right: 30, left: 100, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" allowDecimals={false} />
-                <YAxis dataKey="bucket" type="category" width={120} />
-                <Tooltip formatter={(v: any) => [v, 'Episodios']} labelFormatter={(l) => `${l}`} />
-                <Bar dataKey="count" fill="#0ea5e9" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        <TasksPerEpisodeChart data={tasksPerEpisode} />
       )}
+
+      {/* Mensaje si no hay gráficos */}
       {!hasAnyChart && codebaseVersion !== 'v3.0' && (
         <div className="text-center py-12 text-gray-500 text-lg font-medium">
           No se encontraron diagramas para representar en este dataset.
