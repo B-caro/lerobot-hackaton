@@ -68,7 +68,13 @@ export default function DatasetDetailPage() {
   return (
     <main className="container mx-auto px-4 py-8">
       <button
-        onClick={() => router.back()}
+        onClick={() => {
+          if (typeof window !== 'undefined' && window.history.length > 1) {
+            router.back();
+          } else {
+            router.push('/');
+          }
+        }}
         className="mb-6 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2"
       >
         <span aria-hidden="true">←</span> Regresar
