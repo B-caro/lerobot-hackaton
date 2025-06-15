@@ -1,5 +1,3 @@
-import { XAxisTickProps } from 'recharts';
-
 // Función para agrupar en buckets
 export function bucketize(lengths: number[], bucketSize: number) {
   if (!lengths.length) return [];
