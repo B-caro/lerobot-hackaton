@@ -1,13 +1,16 @@
 # Visualizador de Datasets de Hugging Face (LeRobot)
 
-Este proyecto es una aplicación web para explorar y visualizar datasets públicos del usuario **lerobot** en Hugging Face. Permite buscar, filtrar y navegar entre los datasets, así como ver detalles básicos de cada uno.
+Este proyecto es una aplicación web para explorar y visualizar datasets públicos del usuario **lerobot** en Hugging Face. Permite buscar, filtrar y navegar entre los datasets, así como ver detalles visuales y metadatos de cada uno con una experiencia moderna y atractiva.
 
-## Características
-- Listado de todos los datasets públicos de `lerobot` en Hugging Face
-- Buscador predictivo/autocompletado por nombre de dataset
-- Visualización de detalles básicos: nombre, descripción, likes, descargas, tags, etc.
+## Características principales
+- Listado visual y moderno de todos los datasets públicos de `lerobot` en Hugging Face
+- Buscador predictivo/autocompletado con diseño contemporáneo e iconografía
+- Visualización de detalles y metadatos clave en tarjetas con iconos y gradientes
+- Vista detallada de cada dataset con organización clara y profesional
+- Visualización de videos asociados al dataset con reproductor integrado
 - Enlace directo a la página oficial del dataset en Hugging Face
-- Preparado para mostrar esquema, tabla y visualizaciones (puedes expandirlo fácilmente)
+- Soporte completo para modo oscuro
+- Interacciones suaves y responsivas
 
 ## Instalación
 
@@ -32,11 +35,13 @@ Abre tu navegador en [http://localhost:3000](http://localhost:3000)
 
 ## Estructura principal
 - `app/` — Páginas y layout principal (Next.js)
-- `components/` — Componentes reutilizables (cards, buscador, header, etc.)
+- `components/` — Componentes reutilizables (cards, buscador, header, sección de video, etc.)
 
-## Personalización
-Puedes modificar fácilmente el código para mostrar más detalles, agregar visualizaciones, o adaptar el filtrado a tus necesidades.
+## Personalización y diseño
+- El diseño ha sido modernizado con gradientes, iconos SVG, badges y efectos visuales suaves.
+- La experiencia de usuario es limpia, profesional y responsiva.
+- Puedes modificar fácilmente los componentes para agregar más detalles, visualizaciones o adaptar el estilo a tus necesidades.
 
 ---
 
-Hecho con ❤️ usando Next.js, React y Tailwind CSS. 
+Hecho con ❤️ usando Next.js, React y Tailwind CSS.
