@@ -16,7 +16,7 @@ Este proyecto es una aplicación web para explorar y visualizar datasets públic
 
 1. Clona el repositorio:
    ```bash
-   git clone [<url-del-repo>](https://github.com/B-caro/lerobot-hackaton.git)
+   git clone https://github.com/B-caro/lerobot-hackaton.git
    cd lerobot-hackaton
    ```
 2. Instala las dependencias:
