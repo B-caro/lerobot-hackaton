@@ -1,3 +1,7 @@
+"use client";
+import { useState } from 'react';
+import { highlightJSON } from '../utils/highlightJSON';
+
 interface DatasetHeaderProps {
   name: string;
   description: string;
@@ -8,6 +12,19 @@ interface DatasetHeaderProps {
 export default function DatasetHeader({ name, description, owner, meta }: DatasetHeaderProps) {
   // Para v3.0, mostrar boxes de resumen y boxes de otros campos clave dentro de Metadatos
   const isV3 = meta?.codebase_version === 'v3.0';
+  const [copied, setCopied] = useState(false);
+  const [showJSON, setShowJSON] = useState(false);
+
+  const handleCopyJSON = () => {
+    navigator.clipboard.writeText(JSON.stringify(meta, null, 2));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const toggleShowJSON = () => {
+    setShowJSON(prev => !prev);
+  };
+
   // Campos para boxes
   let boxFields = [
     { key: 'total_episodes', label: 'Episodios', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
@@ -53,68 +70,86 @@ export default function DatasetHeader({ name, description, owner, meta }: Datase
     : [];
 
   return (
-    <div className="mb-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-        <div>
+  <div className="mb-8">
+    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+      <div>
           <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent mb-2">{name}</h1>
-        </div>
-        <a
-          href={`https://huggingface.co/datasets/lerobot/${name}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl transition-all duration-200 shadow-sm hover:shadow-md font-medium"
-        >
-          <span>Ver en Hugging Face</span>
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-          </svg>
-        </a>
       </div>
-      {meta && (
-        <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 mb-4 border border-gray-200 dark:border-gray-700 shadow-sm">
-          <h2 className="text-xl font-semibold mb-6 text-gray-800 dark:text-gray-100 flex items-center gap-2">
-            <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            Metadatos del dataset
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
-            {metaBoxes.map(({ key, label, value, icon }) => (
+      <a
+        href={`https://huggingface.co/datasets/lerobot/${name}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl transition-all duration-200 shadow-sm hover:shadow-md font-medium"
+      >
+        <span>Ver en Hugging Face</span>
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+        </svg>
+      </a>
+    </div>
+    {meta && (
+      <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 mb-4 border border-gray-200 dark:border-gray-700 shadow-sm">
+        <h2 className="text-xl font-semibold mb-6 text-gray-800 dark:text-gray-100 flex items-center gap-2">
+          <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Metadatos del dataset
+          <button
+            onClick={handleCopyJSON}
+            className="ml-2 px-2 py-1 text-xs rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 transition-all"
+          >
+            {copied ? 'Copiado ✅' : 'Copiar JSON'}
+          </button>
+          <button
+            onClick={toggleShowJSON}
+            className="ml-2 px-2 py-1 text-xs rounded bg-blue-100 dark:bg-blue-900 hover:bg-blue-200 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-100 transition-all"
+          >
+            {showJSON ? 'Ocultar JSON' : 'Mostrar JSON'}
+          </button>
+        </h2>
+        {showJSON ? (
+          <pre className="bg-gray-100 dark:bg-gray-900 text-sm rounded-xl p-4 overflow-x-auto whitespace-pre-wrap border border-gray-200 dark:border-gray-700 leading-relaxed font-mono"dangerouslySetInnerHTML={{ __html: highlightJSON(meta) }}/>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
+              {metaBoxes.map(({ key, label, value, icon }) => (
               <div key={key} className="group bg-gray-50 dark:bg-gray-900/50 rounded-xl p-4 flex flex-col items-center justify-center text-center border border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-400 transition-all duration-200">
-                <div className="w-8 h-8 mb-2 text-blue-500">
-                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={icon} />
-                  </svg>
-                </div>
-                <span className="text-2xl font-bold text-gray-900 dark:text-gray-100 break-words w-full">
-                  {typeof value === 'object' && value !== null ? (
-                    <pre className="whitespace-pre-wrap text-xs bg-gray-100 dark:bg-gray-800 rounded-lg p-2 mt-1 w-full text-center">{JSON.stringify(value, null, 2)}</pre>
-                  ) : (
-                    String(value)
-                  )}
-                </span>
-                <span className="text-gray-600 dark:text-gray-400 text-sm mt-2 text-center">{label}</span>
-              </div>
-            ))}
-          </div>
-          {metaTextFields.length > 0 && (
-            <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
-              {metaTextFields.map(([key, value]) => (
-                <div key={key} className="flex flex-col p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-200 dark:border-gray-700">
-                  <dt className="font-medium text-gray-700 dark:text-gray-300 mb-1">{key}</dt>
-                  <dd className="text-gray-900 dark:text-gray-100 break-all">
+                  <div className="w-8 h-8 mb-2 text-blue-500">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={icon} />
+                    </svg>
+                  </div>
+                  <span className="text-2xl font-bold text-gray-900 dark:text-gray-100 break-words w-full">
                     {typeof value === 'object' && value !== null ? (
-                      <pre className="whitespace-pre-wrap text-xs bg-gray-100 dark:bg-gray-800 rounded-lg p-2 mt-1">{JSON.stringify(value, null, 2)}</pre>
+                    <pre className="whitespace-pre-wrap text-xs bg-gray-100 dark:bg-gray-800 rounded-lg p-2 mt-1 w-full text-center">{JSON.stringify(value, null, 2)}</pre>
                     ) : (
                       String(value)
                     )}
-                  </dd>
+                  </span>
+                  <span className="text-gray-600 dark:text-gray-400 text-sm mt-2 text-center">{label}</span>
                 </div>
               ))}
             </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
+            {metaTextFields.length > 0 && (
+              <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
+                {metaTextFields.map(([key, value]) => (
+                <div key={key} className="flex flex-col p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <dt className="font-medium text-gray-700 dark:text-gray-300 mb-1">{key}</dt>
+                    <dd className="text-gray-900 dark:text-gray-100 break-all">
+                      {typeof value === 'object' && value !== null ? (
+                      <pre className="whitespace-pre-wrap text-xs bg-gray-100 dark:bg-gray-800 rounded-lg p-2 mt-1">{JSON.stringify(value, null, 2)}</pre>
+                      ) : (
+                        String(value)
+                      )}
+                    </dd>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    )}
+  </div>
+);
 }
