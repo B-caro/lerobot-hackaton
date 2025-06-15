@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import DatasetSearchBar from '@/components/DatasetSearchBar';
 import DatasetCardList from '@/components/DatasetCardList';
@@ -41,8 +41,10 @@ export default function Home() {
   return (
     <main className="container mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold mb-8">Explorador de Datasets de LeRobot</h1>
-      <DatasetSearchBar onSearch={handleSearch} suggestions={suggestions} />
-      <DatasetCardList searchQuery={searchQuery} />
+      <Suspense fallback={<div>Cargando...</div>}>
+        <DatasetSearchBar onSearch={handleSearch} suggestions={suggestions} />
+        <DatasetCardList searchQuery={searchQuery} />
+      </Suspense>
     </main>
   );
 } 
