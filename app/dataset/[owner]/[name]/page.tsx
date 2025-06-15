@@ -4,14 +4,7 @@ import DatasetHeader from '@/components/DatasetHeader';
 import VizPanel from '@/components/VizPanel';
 import BackButton from '@/components/BackButton';
 
-interface PageProps {
-  params: {
-    owner: string;
-    name: string;
-  };
-}
-
-export default async function Page({ params }: PageProps) {
+export default async function Page({ params }: { params: { owner: string; name: string } }) {
   // Fetch metadatos
   const metaRes = await fetch(`https://huggingface.co/datasets/${params.owner}/${params.name}/resolve/main/meta/info.json`);
   const meta = metaRes.ok ? await metaRes.json() : null;
