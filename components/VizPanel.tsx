@@ -946,7 +946,7 @@ export default function VizPanel({ owner, name, features }: VizPanelProps) {
           </div>
         </div>
       )}
-      {!hasAnyChart && (
+      {!hasAnyChart && codebaseVersion !== 'v3.0' && (
         <div className="text-center py-12 text-gray-500 text-lg font-medium">
           No se encontraron diagramas para representar en este dataset.
         </div>
