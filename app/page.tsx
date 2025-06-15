@@ -1,21 +1,27 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import DatasetSearchBar from '@/components/DatasetSearchBar';
 import DatasetCardList from '@/components/DatasetCardList';
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // Cargar sugerencias de datasets de lerobot una sola vez
   useEffect(() => {
     const fetchDatasets = async () => {
       const response = await fetch('https://huggingface.co/api/datasets?author=lerobot&sort=lastModified');
       const data = await response.json();
-      setSuggestions(data.map((d: any) => d.id));
+      // Pasar objetos enriquecidos para el autocompletado
+      setSuggestions(data.map((d: any) => ({
+        id: d.id,
+        version: d.version || undefined,
+        lastModified: d.lastModified || undefined,
+      })));
     };
     fetchDatasets();
   }, []);
@@ -24,10 +30,11 @@ export default function Home() {
   const handleSearch = (query: string) => {
     setSearchQuery(query);
     // Solo redirigir si el query es un dataset válido de lerobot
-    const match = suggestions.find((id) => id.toLowerCase() === query.toLowerCase());
+    const match = suggestions.find((d) => d.id.toLowerCase() === query.toLowerCase());
     if (match) {
-      const [, name] = match.split('/');
-      router.push(`/dataset/lerobot/${name}`);
+      const [, name] = match.id.split('/');
+      const params = searchParams.toString();
+      router.push(`/dataset/lerobot/${name}${params ? `?${params}` : ''}`);
     }
   };
 
