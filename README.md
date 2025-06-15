@@ -17,7 +17,7 @@ Este proyecto es una aplicación web para explorar y visualizar datasets públic
 1. Clona el repositorio:
    ```bash
    git clone <url-del-repo>
-   cd data-visualization
+   cd lerobot-hackaton
    ```
 2. Instala las dependencias:
    ```bash
