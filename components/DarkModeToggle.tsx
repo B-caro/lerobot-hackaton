@@ -4,11 +4,21 @@ import { useEffect, useState } from "react";
 export default function DarkModeToggle() {
   const [dark, setDark] = useState(false);
 
+  // Leer preferencia de localStorage al cargar
+  useEffect(() => {
+    const stored = localStorage.getItem('darkMode');
+    if (stored === 'true') setDark(true);
+    if (stored === 'false') setDark(false);
+  }, []);
+
+  // Aplicar y guardar preferencia
   useEffect(() => {
     if (dark) {
       document.documentElement.classList.add("dark");
+      localStorage.setItem('darkMode', 'true');
     } else {
       document.documentElement.classList.remove("dark");
+      localStorage.setItem('darkMode', 'false');
     }
   }, [dark]);
 

@@ -6,6 +6,7 @@ interface Dataset {
   lastModified: string;
   likes: number;
   downloads: number;
+  version?: string;
 }
 
 interface DatasetCardProps {
@@ -19,7 +20,10 @@ export default function DatasetCard({ dataset }: DatasetCardProps) {
   return (
     <Link href={`/dataset/lerobot/${name}`}>
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl p-6 hover:shadow-xl transition-shadow shadow-md flex flex-col h-full">
-        <h2 className="text-xl font-semibold mb-2 truncate" title={displayName}>{displayName}</h2>
+        <h2 className="text-xl font-semibold mb-1 truncate" title={displayName}>{displayName}</h2>
+        {dataset.version && (
+          <div className="text-xs text-blue-600 dark:text-blue-300 mb-1">Versión: {dataset.version}</div>
+        )}
         <p className="text-gray-600 dark:text-gray-300 text-sm mb-4 truncate">
           Última actualización: {dataset.lastModified.slice(0, 10)}
         </p>
