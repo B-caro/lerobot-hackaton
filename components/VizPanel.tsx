@@ -7,7 +7,17 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  ScatterChart,
+  Scatter,
+  LineChart,
+  Line,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar,
 } from 'recharts';
+import React from 'react';
 
 interface VizPanelProps {
   owner: string;
@@ -51,6 +61,20 @@ function bucketizeFloat(values: number[], binSize: number) {
   return buckets.filter((b) => b.cantidad > 0);
 }
 
+// Tick personalizado para etiquetas largas en el eje Y
+const TaskTick = (props: any) => {
+  const { x, y, payload } = props;
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <foreignObject width="200" height="40" x="-200" y="-10">
+        <div style={{ fontSize: 12, color: '#374151', whiteSpace: 'pre-line', wordBreak: 'break-word', textAlign: 'right' }}>
+          {payload.value}
+        </div>
+      </foreignObject>
+    </g>
+  );
+};
+
 export default function VizPanel({ owner, name, features }: VizPanelProps) {
   const [selectedField, setSelectedField] = useState<string>('frame_index');
   const [data, setData] = useState<any[]>([]);
@@ -66,6 +90,12 @@ export default function VizPanel({ owner, name, features }: VizPanelProps) {
   // --- NUEVO: Estado para versión y metadatos ---
   const [codebaseVersion, setCodebaseVersion] = useState<string | null>(null);
   const [metaError, setMetaError] = useState<string | null>(null);
+
+  // --- Dashboard de resumen para v3.0 ---
+  const [v3Info, setV3Info] = useState<any>(null);
+  const [v3Stats, setV3Stats] = useState<any>(null);
+  const [loadingV3, setLoadingV3] = useState(false);
+  const [errorV3, setErrorV3] = useState<string | null>(null);
 
   // Detectar versión y metadatos
   useEffect(() => {
@@ -142,19 +172,6 @@ export default function VizPanel({ owner, name, features }: VizPanelProps) {
     };
     fetchLengths();
   }, [owner, name]);
-
-  // Generar histograma para el campo seleccionado
-  function getHistogramData(field: string) {
-    if (!data.length) return [];
-    const counts: Record<string, number> = {};
-    data.forEach((row) => {
-      const value = row[field];
-      if (typeof value === 'number' || typeof value === 'string') {
-        counts[value] = (counts[value] || 0) + 1;
-      }
-    });
-    return Object.entries(counts).map(([key, value]) => ({ value: key, count: value }));
-  }
 
   // --- NUEVO: datos de buckets para el histograma de longitudes ---
   const bucketData = bucketize(lengths, bucketSize);
@@ -384,16 +401,357 @@ export default function VizPanel({ owner, name, features }: VizPanelProps) {
     fetchTasks();
   }, [owner, name, codebaseVersion]);
 
+  // --- 1. Dispersión longitud vs recompensa media ---
+  const [lengthVsReward, setLengthVsReward] = useState<{ episode: number; length: number; meanReward: number }[]>([]);
+  const [loadingLengthVsReward, setLoadingLengthVsReward] = useState(false);
+  const [errorLengthVsReward, setErrorLengthVsReward] = useState<string | null>(null);
+
+  // --- 2. Recompensa total por episodio ---
+  const [totalRewardPerEpisode, setTotalRewardPerEpisode] = useState<{ episode: number; totalReward: number }[]>([]);
+  const [loadingTotalReward, setLoadingTotalReward] = useState(false);
+  const [errorTotalReward, setErrorTotalReward] = useState<string | null>(null);
+
+  // --- 3. Histograma de deltas de tiempo ---
+  const [deltas, setDeltas] = useState<number[]>([]);
+  const [loadingDeltas, setLoadingDeltas] = useState(false);
+  const [errorDeltas, setErrorDeltas] = useState<string | null>(null);
+  const deltaBinSize = 0.01;
+
+  // --- 4. Radar de posición articular media ---
+  const [meanJoints, setMeanJoints] = useState<{ joint: string; mean: number }[]>([]);
+  const [loadingJoints, setLoadingJoints] = useState(false);
+  const [errorJoints, setErrorJoints] = useState<string | null>(null);
+
+  // --- 5. Histograma de episodios por número de tareas ---
+  const [tasksPerEpisode, setTasksPerEpisode] = useState<{ bucket: string; count: number }[]>([]);
+  const [loadingTasksPerEpisode, setLoadingTasksPerEpisode] = useState(false);
+  const [errorTasksPerEpisode, setErrorTasksPerEpisode] = useState<string | null>(null);
+
+  // --- 1 y 2: Fetch y join de episodes.jsonl y episodes_stats.jsonl ---
+  useEffect(() => {
+    if (!codebaseVersion || codebaseVersion === 'v3.0') return;
+    const fetchLengthVsReward = async () => {
+      setLoadingLengthVsReward(true);
+      setErrorLengthVsReward(null);
+      setLengthVsReward([]);
+      setLoadingTotalReward(true);
+      setErrorTotalReward(null);
+      setTotalRewardPerEpisode([]);
+      try {
+        // Fetch episodes.jsonl
+        const epRes = await fetch(`https://huggingface.co/datasets/${owner}/${name}/resolve/main/meta/episodes.jsonl`);
+        if (!epRes.ok) throw new Error('No se pudo descargar episodes.jsonl');
+        const epText = await epRes.text();
+        const epLines = epText.split('\n').filter(Boolean);
+        const epMap: Record<number, number> = {};
+        epLines.forEach((line, idx) => {
+          try {
+            const obj = JSON.parse(line);
+            if (typeof obj.length === 'number') {
+              epMap[idx] = obj.length;
+            }
+          } catch {}
+        });
+        // Fetch episodes_stats.jsonl
+        const statsRes = await fetch(`https://huggingface.co/datasets/${owner}/${name}/resolve/main/meta/episodes_stats.jsonl`);
+        if (!statsRes.ok) throw new Error('No se pudo descargar episodes_stats.jsonl');
+        const statsText = await statsRes.text();
+        const statsLines = statsText.split('\n').filter(Boolean);
+        const arr: { episode: number; length: number; meanReward: number }[] = [];
+        const arrTotal: { episode: number; totalReward: number }[] = [];
+        statsLines.forEach((line, idx) => {
+          try {
+            const obj = JSON.parse(line);
+            if (obj.stats && typeof obj.stats.next_reward?.mean === 'number' && typeof epMap[idx] === 'number') {
+              arr.push({ episode: idx, length: epMap[idx], meanReward: obj.stats.next_reward.mean });
+              arrTotal.push({ episode: idx, totalReward: obj.stats.next_reward.mean * epMap[idx] });
+            }
+          } catch {}
+        });
+        if (!arr.length) throw new Error('No se pudo unir longitud y recompensa media');
+        setLengthVsReward(arr);
+        setTotalRewardPerEpisode(arrTotal);
+      } catch (e: any) {
+        setErrorLengthVsReward(e.message || 'Error al cargar dispersión');
+        setErrorTotalReward(e.message || 'Error al cargar recompensa total');
+      } finally {
+        setLoadingLengthVsReward(false);
+        setLoadingTotalReward(false);
+      }
+    };
+    fetchLengthVsReward();
+  }, [owner, name, codebaseVersion]);
+
+  // --- 3: Deltas de tiempo ---
+  useEffect(() => {
+    if (!codebaseVersion || codebaseVersion === 'v3.0') return;
+    const fetchDeltas = async () => {
+      setLoadingDeltas(true);
+      setErrorDeltas(null);
+      setDeltas([]);
+      try {
+        // Usar el endpoint de Hugging Face datasets-server para obtener timestamps
+        const url = `https://datasets-server.huggingface.co/rows?dataset=${encodeURIComponent(owner + '/' + name)}&config=default&split=train&offset=0&length=1000`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('No se pudo descargar los datos de pasos');
+        const result = await response.json();
+        const rows = result.rows ? result.rows.map((r: any) => r.row) : [];
+        const timestamps: number[] = [];
+        for (const row of rows) {
+          if (typeof row.timestamp === 'number') {
+            timestamps.push(row.timestamp);
+          }
+        }
+        const deltasArr: number[] = [];
+        timestamps.forEach((t, i) => {
+          if (i > 0) deltasArr.push(t - timestamps[i - 1]);
+        });
+        if (!deltasArr.length) throw new Error('No se encontraron deltas de tiempo');
+        setDeltas(deltasArr);
+      } catch (e: any) {
+        setErrorDeltas(e.message || 'Error al cargar deltas');
+      } finally {
+        setLoadingDeltas(false);
+      }
+    };
+    fetchDeltas();
+  }, [owner, name, codebaseVersion]);
+  const deltaBuckets = bucketizeFloat(deltas, deltaBinSize);
+
+  // --- 4: Radar de posición articular media ---
+  useEffect(() => {
+    if (!codebaseVersion || codebaseVersion === 'v3.0') return;
+    const fetchJoints = async () => {
+      setLoadingJoints(true);
+      setErrorJoints(null);
+      setMeanJoints([]);
+      try {
+        const url = `https://huggingface.co/datasets/${owner}/${name}/resolve/main/meta/episodes_stats.jsonl`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('No se pudo descargar episodes_stats.jsonl');
+        const text = await response.text();
+        const lines = text.split('\n').filter(Boolean);
+        // Acumular medias por joint
+        let sum: number[] = [];
+        let count = 0;
+        for (const line of lines) {
+          try {
+            const obj = JSON.parse(line);
+            if (obj.stats && Array.isArray(obj.stats.observation?.state?.mean)) {
+              const arr = obj.stats.observation.state.mean;
+              if (sum.length === 0) sum = Array(arr.length).fill(0);
+              arr.forEach((v: number, i: number) => {
+                sum[i] += v;
+              });
+              count++;
+            }
+          } catch {}
+        }
+        if (!sum.length || !count) throw new Error('No se encontraron medias de articulaciones');
+        const meanArr = sum.map((s, i) => ({ joint: `joint${i + 1}`, mean: s / count }));
+        setMeanJoints(meanArr);
+      } catch (e: any) {
+        setErrorJoints(e.message || 'Error al cargar articulaciones');
+      } finally {
+        setLoadingJoints(false);
+      }
+    };
+    fetchJoints();
+  }, [owner, name, codebaseVersion]);
+
+  // --- 5: Histograma de episodios por número de tareas ---
+  useEffect(() => {
+    if (!codebaseVersion || codebaseVersion === 'v3.0') return;
+    const fetchTasksPerEpisode = async () => {
+      setLoadingTasksPerEpisode(true);
+      setErrorTasksPerEpisode(null);
+      setTasksPerEpisode([]);
+      try {
+        const url = `https://huggingface.co/datasets/${owner}/${name}/resolve/main/meta/episodes.jsonl`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('No se pudo descargar episodes.jsonl');
+        const text = await response.text();
+        const lines = text.split('\n').filter(Boolean);
+        const counts: Record<number, number> = {};
+        for (const line of lines) {
+          try {
+            const obj = JSON.parse(line);
+            if (Array.isArray(obj.tasks)) {
+              const n = obj.tasks.length;
+              counts[n] = (counts[n] || 0) + 1;
+            }
+          } catch {}
+        }
+        const arr = Object.entries(counts).map(([k, v]) => ({ bucket: `${k} tarea${k === '1' ? '' : 's'}`, count: v }));
+        setTasksPerEpisode(arr);
+      } catch (e: any) {
+        setErrorTasksPerEpisode(e.message || 'Error al cargar tareas por episodio');
+      } finally {
+        setLoadingTasksPerEpisode(false);
+      }
+    };
+    fetchTasksPerEpisode();
+  }, [owner, name, codebaseVersion]);
+
+  // --- Dashboard de resumen para v3.0 ---
+  useEffect(() => {
+    if (codebaseVersion !== 'v3.0') return;
+    setLoadingV3(true);
+    setErrorV3(null);
+    setV3Info(null);
+    setV3Stats(null);
+    const fetchV3 = async () => {
+      try {
+        const infoRes = await fetch(`https://huggingface.co/datasets/${owner}/${name}/resolve/main/meta/info.json`);
+        if (!infoRes.ok) throw new Error('No se pudo descargar info.json');
+        const info = await infoRes.json();
+        setV3Info(info);
+        const statsRes = await fetch(`https://huggingface.co/datasets/${owner}/${name}/resolve/main/meta/stats.json`);
+        if (!statsRes.ok) throw new Error('No se pudo descargar stats.json');
+        const stats = await statsRes.json();
+        setV3Stats(stats);
+      } catch (e: any) {
+        setErrorV3(e.message || 'Error al cargar estadísticas globales');
+      } finally {
+        setLoadingV3(false);
+      }
+    };
+    fetchV3();
+  }, [owner, name, codebaseVersion]);
+
   // Determinar si hay al menos un gráfico para mostrar
   const hasAnyChart =
     (bucketData.length > 0 && !loadingLengths && !errorLengths) ||
     (rewardBuckets.length > 0 && !loadingRewards && !errorRewards) ||
     (meanRewards.length > 0 && !loadingMeanRewards && !errorMeanRewards) ||
     (magnitudeBuckets.length > 0 && !loadingMagnitudes && !errorMagnitudes) ||
-    (taskCounts.length > 0 && !loadingTasks && !errorTasks);
+    (taskCounts.length > 0 && !loadingTasks && !errorTasks) ||
+    (lengthVsReward.length > 0 && !loadingLengthVsReward && !errorLengthVsReward) ||
+    (totalRewardPerEpisode.length > 0 && !loadingTotalReward && !errorTotalReward) ||
+    (deltaBuckets.length > 0 && !loadingDeltas && !errorDeltas) ||
+    (meanJoints.length > 0 && !loadingJoints && !errorJoints) ||
+    (tasksPerEpisode.length > 0 && !loadingTasksPerEpisode && !errorTasksPerEpisode);
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-lg shadow p-6">
+      {/* --- Dashboard de resumen para v3.0 --- */}
+      {codebaseVersion === 'v3.0' && (
+        <>
+          {loadingV3 ? (
+            <div className="text-center py-12 text-gray-500 text-lg font-medium">Cargando estadísticas globales...</div>
+          ) : errorV3 ? (
+            <div className="text-center py-12 text-red-500 text-lg font-medium">Lo sentimos, este dataset v3.0 no expone estadísticas globales. No hay gráficos que mostrar.</div>
+          ) : v3Info && v3Stats ? (
+            <>
+              {/* Gráficos de medias y std para reward, timestamp, frame_index */}
+              <div className="mt-10">
+                <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Estadísticas globales de recompensa, tiempo y frames</h3>
+                <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Aquí se muestra la media y desviación estándar de la recompensa, el timestamp y el índice de frame para todo el dataset.</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                  {/* next.reward */}
+                  {v3Stats.next?.reward && (
+                    <div>
+                      <h4 className="font-medium mb-2 text-blue-700 dark:text-blue-200">Recompensa</h4>
+                      <ResponsiveContainer width="100%" height={180}>
+                        <BarChart data={[{ name: 'Media', value: v3Stats.next.reward.mean }, { name: 'Std', value: v3Stats.next.reward.std }]}>
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Bar dataKey="value" fill="#3b82f6" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                      <div className="text-xs mt-2 text-gray-500">Min: {v3Stats.next.reward.min}, Max: {v3Stats.next.reward.max}</div>
+                    </div>
+                  )}
+                  {/* timestamp */}
+                  {v3Stats.timestamp && (
+                    <div>
+                      <h4 className="font-medium mb-2 text-blue-700 dark:text-blue-200">Timestamp</h4>
+                      <ResponsiveContainer width="100%" height={180}>
+                        <BarChart data={[{ name: 'Media', value: v3Stats.timestamp.mean }, { name: 'Std', value: v3Stats.timestamp.std }]}>
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Bar dataKey="value" fill="#6366f1" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                      <div className="text-xs mt-2 text-gray-500">Min: {v3Stats.timestamp.min}, Max: {v3Stats.timestamp.max}</div>
+                    </div>
+                  )}
+                  {/* frame_index */}
+                  {v3Stats.frame_index && (
+                    <div>
+                      <h4 className="font-medium mb-2 text-blue-700 dark:text-blue-200">Frame Index</h4>
+                      <ResponsiveContainer width="100%" height={180}>
+                        <BarChart data={[{ name: 'Media', value: v3Stats.frame_index.mean }, { name: 'Std', value: v3Stats.frame_index.std }]}>
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Bar dataKey="value" fill="#f59e42" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                      <div className="text-xs mt-2 text-gray-500">Min: {v3Stats.frame_index.min}, Max: {v3Stats.frame_index.max}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {/* Gráficos de medias y std para observation.state y action */}
+              <div className="mt-10">
+                <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Estadísticas globales de observaciones y acciones</h3>
+                <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Medias y desviaciones estándar por dimensión para observation.state y action.</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* observation.state */}
+                  {v3Stats.observation?.state && (
+                    <div>
+                      <h4 className="font-medium mb-2 text-blue-700 dark:text-blue-200">Observation State (media)</h4>
+                      <ResponsiveContainer width="100%" height={180}>
+                        <BarChart data={v3Stats.observation.state.mean.map((v: number, i: number) => ({ name: `S${i + 1}`, value: v }))}>
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Bar dataKey="value" fill="#10b981" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                      <h4 className="font-medium mt-4 mb-2 text-blue-700 dark:text-blue-200">Observation State (std)</h4>
+                      <ResponsiveContainer width="100%" height={180}>
+                        <BarChart data={v3Stats.observation.state.std.map((v: number, i: number) => ({ name: `S${i + 1}`, value: v }))}>
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Bar dataKey="value" fill="#f43f5e" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                  {/* action */}
+                  {v3Stats.action && (
+                    <div>
+                      <h4 className="font-medium mb-2 text-blue-700 dark:text-blue-200">Action (media)</h4>
+                      <ResponsiveContainer width="100%" height={180}>
+                        <BarChart data={v3Stats.action.mean.map((v: number, i: number) => ({ name: `A${i + 1}`, value: v }))}>
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Bar dataKey="value" fill="#0ea5e9" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                      <h4 className="font-medium mt-4 mb-2 text-blue-700 dark:text-blue-200">Action (std)</h4>
+                      <ResponsiveContainer width="100%" height={180}>
+                        <BarChart data={v3Stats.action.std.map((v: number, i: number) => ({ name: `A${i + 1}`, value: v }))}>
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Bar dataKey="value" fill="#ef4444" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : null}
+        </>
+      )}
       {/* --- Eliminar bloque de 'Visualización' de campos simples --- */}
       {/* Mostrar los gráficos útiles, o un mensaje si no hay ninguno */}
       {bucketData.length > 0 && !loadingLengths && !errorLengths && (
@@ -470,12 +828,99 @@ export default function VizPanel({ owner, name, features }: VizPanelProps) {
           <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Este gráfico muestra cuántos episodios hay para cada descripción de tarea (top 10).</p>
           <div className="h-[400px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={taskCounts} layout="vertical" margin={{ top: 20, right: 30, left: 100, bottom: 20 }}>
+              <BarChart data={taskCounts} layout="vertical" margin={{ top: 20, right: 30, left: 140, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis type="number" allowDecimals={false} />
-                <YAxis dataKey="task" type="category" width={200} />
+                <YAxis dataKey="task" type="category" width={140} tick={<TaskTick />} />
                 <Tooltip formatter={(value: any, name: any, props: any) => [`${value} episodios`, 'Cantidad']} labelFormatter={(label) => `${label}`} />
                 <Bar dataKey="count" fill="#ef4444" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+      {/* --- 1. Dispersión longitud vs recompensa media --- */}
+      {lengthVsReward.length > 0 && !loadingLengthVsReward && !errorLengthVsReward && (
+        <div className="mt-10">
+          <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Longitud vs. recompensa media por episodio</h3>
+          <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Cada punto representa un episodio. El eje X es la longitud (frames) y el eje Y la recompensa media.</p>
+          <div className="h-[400px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <ScatterChart>
+                <XAxis dataKey="length" name="Longitud (frames)" />
+                <YAxis dataKey="meanReward" name="Recompensa media" />
+                <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={(v: any, n: any) => [v, n === 'length' ? 'Longitud' : 'Recompensa media']} />
+                <Scatter data={lengthVsReward} fill="#0ea5e9" />
+              </ScatterChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+      {/* --- 2. Recompensa total por episodio --- */}
+      {totalRewardPerEpisode.length > 0 && !loadingTotalReward && !errorTotalReward && (
+        <div className="mt-10">
+          <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Recompensa acumulada por episodio</h3>
+          <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">La recompensa total estimada para cada episodio (recompensa media × longitud).</p>
+          <div className="h-[400px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={totalRewardPerEpisode} margin={{ top: 20, right: 30, left: 10, bottom: 60 }}>
+                <XAxis dataKey="episode" />
+                <YAxis />
+                <Tooltip formatter={(v: any) => [v, 'Recompensa total']} labelFormatter={(l) => `Episodio ${l}`} />
+                <Line type="monotone" dataKey="totalReward" stroke="#f43f5e" dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+      {/* --- 3. Histograma de deltas de tiempo --- */}
+      {deltaBuckets.length > 0 && !loadingDeltas && !errorDeltas && (
+        <div className="mt-10">
+          <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Distribución de Δt entre frames</h3>
+          <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Histograma de las diferencias de tiempo entre frames consecutivos.</p>
+          <div className="h-[400px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={deltaBuckets} margin={{ top: 20, right: 30, left: 10, bottom: 60 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="intervalo" angle={-45} textAnchor="end" interval={0} height={60} />
+                <YAxis allowDecimals={false} />
+                <Tooltip formatter={(v: any) => [v, 'Cantidad']} labelFormatter={(l) => `Δt ${l} s`} />
+                <Bar dataKey="cantidad" fill="#6366f1" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+      {/* --- 4. Radar de posición articular media --- */}
+      {meanJoints.length > 0 && !loadingJoints && !errorJoints && (
+        <div className="mt-10">
+          <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Valores promedio de articulaciones</h3>
+          <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Radar de los valores medios de cada articulación del robot.</p>
+          <div className="h-[400px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart data={meanJoints} outerRadius="80%">
+                <PolarGrid />
+                <PolarAngleAxis dataKey="joint" />
+                <PolarRadiusAxis />
+                <Radar name="Valor medio" dataKey="mean" stroke="#0ea5e9" fill="#0ea5e9" fillOpacity={0.6} />
+              </RadarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+      {/* --- 5. Histograma de episodios por número de tareas --- */}
+      {tasksPerEpisode.length > 0 && !loadingTasksPerEpisode && !errorTasksPerEpisode && (
+        <div className="mt-10">
+          <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Número de episodios según cantidad de tareas</h3>
+          <p className="text-gray-600 dark:text-gray-300 mb-4 text-sm">Histograma del número de tareas que tiene cada episodio.</p>
+          <div className="h-[400px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={tasksPerEpisode} layout="vertical" margin={{ top: 20, right: 30, left: 100, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" allowDecimals={false} />
+                <YAxis dataKey="bucket" type="category" width={120} />
+                <Tooltip formatter={(v: any) => [v, 'Episodios']} labelFormatter={(l) => `${l}`} />
+                <Bar dataKey="count" fill="#0ea5e9" />
               </BarChart>
             </ResponsiveContainer>
           </div>
